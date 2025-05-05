@@ -166,3 +166,9 @@ GenScene.mp4
 exported-*.mp4
 previews/
 temp_manim/
+
+
+# Manim
+routes/temp_files/
+routes/partial_movie_files/
+
