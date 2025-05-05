@@ -53,7 +53,7 @@ docker build -t manim-server-api .
 4. **Run the Docker container:**
 
 ```bash
-docker run -p 8080:8080 manim-server-api
+docker run -p 5000:5000 manim-server-api
 ```
 
 5. You have the API running.

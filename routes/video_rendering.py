@@ -19,7 +19,7 @@ video_rendering_bp = Blueprint("video_rendering", __name__)
 
 # Configuration
 USE_LOCAL_STORAGE = os.getenv("USE_LOCAL_STORAGE", "False").lower() == "true"
-BASE_URL = os.getenv("BASE_URL","http://192.168.1.3:8080/")
+BASE_URL = os.getenv("BASE_URL","http://192.168.1.3:5000/")
 DO_SPACES_ACCESS_KEY = os.getenv("DO_SPACES_ACCESS_KEY")
 DO_SPACES_ACCESS_SECRET = os.getenv("DO_SPACES_ACCESS_SECRET")
 DO_SPACES_REGION = os.getenv("DO_SPACES_REGION", "blr1")
