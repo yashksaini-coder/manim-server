@@ -18,7 +18,8 @@ load_dotenv()
 video_rendering_bp = Blueprint("video_rendering", __name__)
 
 
-USE_LOCAL_STORAGE = os.getenv("USE_LOCAL_STORAGE")
+USE_LOCAL_STORAGE = False
+# os.getenv("USE_LOCAL_STORAGE")
 BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8000/")
 
 
@@ -27,8 +28,8 @@ def upload_to_digital_ocean_storage(file_path: str, video_storage_file_name: str
     Uploads the video to DigitalOcean Spaces and returns the public URL.
     """
     # Get credentials and config from environment variables
-    DO_SPACES_ACCESS_KEY=DO801E4EU4QENH32VTWG
-    DO_SPACES_ACCESS_SECRET=XIpyNbXjZ2NzTznEmmiFCD9Etify2phcTYELWutFJkw
+    DO_SPACES_ACCESS_KEY="DO801E4EU4QENH32VTWG"
+    DO_SPACES_ACCESS_SECRET="XIpyNbXjZ2NzTznEmmiFCD9Etify2phcTYELWutFJkw"
     DO_SPACES_REGION="blr1"
     DO_SPACES_BUCKET="manima"
     DO_SPACES_ENDPOINT="https://manima.blr1.digitaloceanspaces.com"
@@ -233,7 +234,6 @@ config.frame_width = {frame_width}
                 print(f"Files in video file directory: {os.listdir(os.path.dirname(video_file_path))}")
                 
                 if USE_LOCAL_STORAGE:
-                    # Pass request.host_url if available
                     base_url = (
                         request.host_url
                         if request and hasattr(request, "host_url")
@@ -243,16 +243,11 @@ config.frame_width = {frame_width}
                         video_file_path, video_storage_file_name, base_url
                     )
                 else:
-                    video_url = upload_to_azure_storage(
+                    video_url = upload_to_digital_ocean_storage(
                         video_file_path, video_storage_file_name
                     )
                 print(f"Video URL: {video_url}")
 
-                video_url = upload_to_digital_ocean_storage(
-                        video_file_path, video_storage_file_name
-                    )
-                    
-                print(f"Video URL: {video_url}")
                 if stream:
                     yield f'{{ "video_url": "{video_url}" }}\n'
                     sys.stdout.flush()
@@ -342,56 +337,3 @@ config.frame_width = {frame_width}
             print(f"Error in non-streaming mode: {e}")
             return jsonify({"error": str(e)}), 500
 
-
-@video_rendering_bp.route("/v1/video/exporting", methods=["POST"])
-def export_video():
-    scenes = request.json.get("scenes")
-    title_slug = request.json.get("titleSlug")
-    local_filenames = []
-
-    # Download each scene
-    for scene in scenes:
-        video_url = scene["videoUrl"]
-        object_name = video_url.split("/")[-1]
-        local_filename = download_video(video_url)
-        local_filenames.append(local_filename)
-
-    # Create a list of input file arguments for ffmpeg
-    input_files = " ".join([f"-i {filename}" for filename in local_filenames])
-
-    # Generate a unique filename with UNIX timestamp
-    timestamp = int(time.time())
-    merged_filename = os.path.join(
-        os.getcwd(), f"exported-scene-{title_slug}-{timestamp}.mp4"
-    )
-
-    # Command to merge videos using ffmpeg
-    command = f"ffmpeg {input_files} -filter_complex 'concat=n={len(local_filenames)}:v=1:a=0[out]' -map '[out]' {merged_filename}"
-
-    try:
-        # Execute the ffmpeg command
-        subprocess.run(command, shell=True, check=True)
-        print("Videos merged successfully.")
-        print(f"merged_filename: {merged_filename}")
-        public_url = upload_to_digital_ocean_storage(
-            merged_filename, f"exported-scene-{title_slug}-{timestamp}"
-        )
-        print(f"Video URL: {public_url}")
-        return jsonify(
-            {"status": "Videos merged successfully", "video_url": public_url}
-        )
-    except subprocess.CalledProcessError as e:
-        print(f"ffmpeg error: {e}")
-        return jsonify({"error": "Failed to merge videos"}), 500
-    except Exception as e:
-        print(f"Error: {e}")
-        return jsonify({"error": str(e)}), 500
-
-
-def download_video(video_url):
-    local_filename = video_url.split("/")[-1]
-    response = requests.get(video_url)
-    response.raise_for_status()
-    with open(local_filename, 'wb') as f:
-        f.write(response.content)
-    return local_filename
