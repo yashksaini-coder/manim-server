@@ -1,0 +1,12 @@
+version: "3.8"
+
+services:
+  manim-api:
+    build: .
+    container_name: manim-api
+    ports:
+      - "8000:8000"
+    environment:
+      - .env
+
+    restart: unless-stopped
