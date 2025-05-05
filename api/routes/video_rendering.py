@@ -18,9 +18,9 @@ load_dotenv()
 video_rendering_bp = Blueprint("video_rendering", __name__)
 
 
-USE_LOCAL_STORAGE = False
+USE_LOCAL_STORAGE = True
 # os.getenv("USE_LOCAL_STORAGE")
-BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8000/")
+BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8080/")
 
 
 def upload_to_digital_ocean_storage(file_path: str, video_storage_file_name: str) -> str:
