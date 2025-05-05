@@ -27,18 +27,18 @@ def upload_to_digital_ocean_storage(file_path: str, video_storage_file_name: str
     Uploads the video to DigitalOcean Spaces and returns the public URL.
     """
     # Get credentials and config from environment variables
-    ACCESS_ID = os.getenv("DO_SPACES_KEY")
-    SECRET_KEY = os.getenv("DO_SPACES_SECRET")
-    REGION = os.getenv("DO_SPACES_REGION")
-    ENDPOINT = os.getenv("DO_SPACES_ENDPOINT")
-    BUCKET = os.getenv("DO_SPACES_BUCKET")
+    DO_SPACES_ACCESS_KEY=DO801E4EU4QENH32VTWG
+    DO_SPACES_ACCESS_SECRET=XIpyNbXjZ2NzTznEmmiFCD9Etify2phcTYELWutFJkw
+    DO_SPACES_REGION="blr1"
+    DO_SPACES_BUCKET="manima"
+    DO_SPACES_ENDPOINT="https://manima.blr1.digitaloceanspaces.com"
 
     client = boto3.client(
         's3',
-        region_name=REGION,
-        endpoint_url=ENDPOINT,
-        aws_access_key_id=ACCESS_ID,
-        aws_secret_access_key=SECRET_KEY
+        region_name=DO_SPACES_REGION,
+        endpoint_url=DO_SPACES_ENDPOINT,
+        aws_access_key_id=DO_SPACES_ACCESS_KEY,
+        aws_secret_access_key=DO_SPACES_ACCESS_SECRET
     )
 
     # Ensure the file name has .mp4 extension
@@ -47,12 +47,12 @@ def upload_to_digital_ocean_storage(file_path: str, video_storage_file_name: str
 
     client.upload_file(
         file_path,
-        BUCKET,
+        DO_SPACES_BUCKET,
         video_storage_file_name,
         ExtraArgs={'ACL': 'public-read', 'ContentType': 'video/mp4'}
     )
 
-    return f"{ENDPOINT}/{BUCKET}/{video_storage_file_name}"
+    return f"{DO_SPACES_ENDPOINT}/{DO_SPACES_BUCKET}/{video_storage_file_name}"
 
 
 
@@ -232,6 +232,22 @@ config.frame_width = {frame_width}
 
                 print(f"Files in video file directory: {os.listdir(os.path.dirname(video_file_path))}")
                 
+                if USE_LOCAL_STORAGE:
+                    # Pass request.host_url if available
+                    base_url = (
+                        request.host_url
+                        if request and hasattr(request, "host_url")
+                        else None
+                    )
+                    video_url = move_to_public_folder(
+                        video_file_path, video_storage_file_name, base_url
+                    )
+                else:
+                    video_url = upload_to_azure_storage(
+                        video_file_path, video_storage_file_name
+                    )
+                print(f"Video URL: {video_url}")
+
                 video_url = upload_to_digital_ocean_storage(
                         video_file_path, video_storage_file_name
                     )
