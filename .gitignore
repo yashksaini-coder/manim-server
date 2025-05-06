@@ -172,3 +172,4 @@ temp_manim/
 routes/temp_files/
 routes/partial_movie_files/
 
+.vercel

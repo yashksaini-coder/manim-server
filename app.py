@@ -1,5 +1,5 @@
 import os
-from flask import Flask, send_from_directory
+from flask import Flask, send_from_directory, render_template
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -24,11 +24,7 @@ CORS(app)
 
 @app.route("/")
 def hello_world():
-    return "Generative Manim Processor"
-
-@app.route("/openapi.yaml")
-def openapi():
-    return send_from_directory(app.static_folder, "openapi.yaml")
+    return render_template("index.html")
 
 if __name__ == "__main__":
     app.run(debug=False, host="0.0.0.0", port=5000)
