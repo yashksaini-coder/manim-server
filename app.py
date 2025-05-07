@@ -9,7 +9,6 @@ load_dotenv()
 # Import blueprints from routes
 from routes.video_rendering import video_rendering_bp
 from routes.code_generation import code_generation_bp
-from routes.chat_endpoint import chat_generation_bp
 
 # Initialize Flask app
 app = Flask(__name__, static_folder="public", static_url_path="/public")
@@ -17,7 +16,6 @@ app = Flask(__name__, static_folder="public", static_url_path="/public")
 # Register all blueprints (endpoints)
 app.register_blueprint(video_rendering_bp)
 app.register_blueprint(code_generation_bp)
-app.register_blueprint(chat_generation_bp)
 
 # Enable CORS for all routes
 CORS(app)

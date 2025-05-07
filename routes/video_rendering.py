@@ -18,13 +18,13 @@ load_dotenv()
 video_rendering_bp = Blueprint("video_rendering", __name__)
 
 # Configuration
-USE_LOCAL_STORAGE = os.getenv("USE_LOCAL_STORAGE")
-BASE_URL = os.getenv("BASE_URL","http://192.168.1.3:5000/")
+USE_LOCAL_STORAGE = False
+BASE_URL = os.getenv("BASE_URL")
 DO_SPACES_ACCESS_KEY = os.getenv("DO_SPACES_ACCESS_KEY")
 DO_SPACES_ACCESS_SECRET = os.getenv("DO_SPACES_ACCESS_SECRET")
-DO_SPACES_REGION = os.getenv("DO_SPACES_REGION", "blr1")
-DO_SPACES_BUCKET = os.getenv("DO_SPACES_BUCKET", "manima")
-DO_SPACES_ENDPOINT = os.getenv("DO_SPACES_ENDPOINT", "https://manima.blr1.digitaloceanspaces.com")
+DO_SPACES_REGION = os.getenv("DO_SPACES_REGION")
+DO_SPACES_BUCKET = os.getenv("DO_SPACES_BUCKET")
+DO_SPACES_ENDPOINT = os.getenv("DO_SPACES_ENDPOINT")
 
 
 def upload_to_digital_ocean_storage(file_path: str, video_storage_file_name: str) -> str:
