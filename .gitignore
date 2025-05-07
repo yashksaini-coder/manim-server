@@ -166,10 +166,11 @@ GenScene.mp4
 exported-*.mp4
 previews/
 temp_manim/
+*.mp4
 
 
 # Manim
 routes/temp_files/
 routes/partial_movie_files/
-
-.vercel
+routes/public/
+.vercel/
