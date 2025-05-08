@@ -22,9 +22,9 @@ from manim import *
 from math import *
 
 class GenScene(Scene):
-def construct(self):
-    c = Circle(color=BLUE)
-    self.play(Create(c))
+    def construct(self):
+        c = Circle(color=BLUE)
+        self.play(Create(c))
 
 \`\`\`
 

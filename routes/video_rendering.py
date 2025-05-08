@@ -215,7 +215,7 @@ config.frame_width = {frame_width}
 
                 print(f"Files in video file directory: {os.listdir(os.path.dirname(video_file_path))}")
 
-                if USE_LOCAL_STORAGE:
+                if USE_LOCAL_STORAGE == "true":
                     base_url = (
                         request.host_url
                         if request and hasattr(request, "host_url")
