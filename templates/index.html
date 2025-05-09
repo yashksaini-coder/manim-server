@@ -132,28 +132,10 @@ curl -X POST http://localhost:5000/v1/generate/code -H "Content-Type: applicatio
           <span class="endpoint-method">POST</span>
           <span class="endpoint-url">/v1/generate/chat</span>
         </div>
-        <div class="endpoint-desc">
-          Generate code for animations using OpenAI or Groq, supporting
-          streaming and advanced options.
-        </div>
-        <div>Body Example:</div>
-        <pre>
-{
-  "messages": [{"role": "user", "content": "Create a bouncing ball animation."}],
-  "engine": "openai",
-  "model": "gpt-4o"
-}</pre
-        >
-        <div>Test with curl:</div>
-        <pre>
-curl -X POST http://localhost:5000/v1/generate/chat -H "Content-Type: application/json" -d @body.json</pre
-        >
-      </div>
-
       <div class="footer">
         &copy; 2024 Manim AI API &mdash;
         <a
-          href="https://github.com/marcelo-earth/generative-manim"
+          href="https://github.com/yashksaini-coder/manim-server"
           target="_blank"
           >GitHub</a
         >
