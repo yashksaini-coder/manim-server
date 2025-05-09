@@ -9,7 +9,7 @@ code_generation_bp = Blueprint('code_generation', __name__)
 def generate_code():
     body = request.json
     prompt_content = body.get("prompt", "")
-    model = body.get("model", "llama-3.3-70b-versatile")
+    model = body.get("model")
 
 
     general_system_prompt = """

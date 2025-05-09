@@ -18,7 +18,7 @@ load_dotenv()
 video_rendering_bp = Blueprint("video_rendering", __name__)
 
 # Configuration
-USE_LOCAL_STORAGE = False
+USE_LOCAL_STORAGE = os.getenv("USE_LOCAL_STORAGE") 
 BASE_URL = os.getenv("BASE_URL")
 DO_SPACES_ACCESS_KEY = os.getenv("DO_SPACES_ACCESS_KEY")
 DO_SPACES_ACCESS_SECRET = os.getenv("DO_SPACES_ACCESS_SECRET")
