@@ -15,8 +15,8 @@ from dotenv import load_dotenv
 from service import cache, queue, redis_conn
 from rq.job import Job
 
-# Import helpers from video_worker
-from routes.video_worker import render_video_task
+# Import render_video_task from the top-level routes package
+from routes import render_video_task
 
 load_dotenv()
 
@@ -116,8 +116,8 @@ def render_video_route():
         'stream': stream
     }
     
-    # Enqueue the render_video_task function from video_worker
-    job = queue.enqueue(render_video_task, args)
+    # Use the exact module path as a string
+    job = queue.enqueue('routes.video_worker.render_video_task', args)
     return jsonify({"job_id": job.get_id()}), 202
 
 
