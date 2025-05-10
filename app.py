@@ -2,6 +2,9 @@ import os
 from flask import Flask, send_from_directory, render_template
 from flask_cors import CORS
 from dotenv import load_dotenv
+from flask_caching import Cache
+import redis
+from rq import Queue
 
 # Load environment variables from .env file
 load_dotenv()
@@ -19,6 +22,20 @@ app.register_blueprint(code_generation_bp)
 
 # Enable CORS for all routes
 CORS(app)
+
+# Flask-Caching config for Redis
+app.config['CACHE_TYPE'] = 'redis'
+app.config['CACHE_REDIS_HOST'] = os.getenv('REDIS_HOST', 'localhost')
+app.config['CACHE_REDIS_PORT'] = int(os.getenv('REDIS_PORT', 6379))
+app.config['CACHE_REDIS_DB'] = int(os.getenv('REDIS_DB', 0))
+app.config['CACHE_DEFAULT_TIMEOUT'] = 300
+
+cache = Cache(app)
+
+# Redis connection and RQ queue
+redis_url = os.getenv('REDIS_URL', f"redis://{app.config['CACHE_REDIS_HOST']}:{app.config['CACHE_REDIS_PORT']}/{app.config['CACHE_REDIS_DB']}")
+redis_conn = redis.from_url(redis_url)
+queue = Queue(connection=redis_conn)
 
 @app.route("/")
 def hello_world():

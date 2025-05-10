@@ -7,3 +7,6 @@ dotenv
 requests
 pillow
 manim
+flask-caching
+redis
+rq

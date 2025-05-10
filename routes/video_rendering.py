@@ -12,6 +12,8 @@ import time
 import requests
 import boto3
 from dotenv import load_dotenv
+from app import cache, queue, redis_conn
+from rq.job import Job
 
 load_dotenv()
 
@@ -84,24 +86,17 @@ def get_frame_config(aspect_ratio):
         return (3840, 2160), 14.22
 
 
-@video_rendering_bp.route("/v1/render/video", methods=["POST"])
-def render_video_route():
-    """
-    Endpoint to render a video using Manim based on user-provided code and parameters.
-    """
-    code = request.json.get("code")
-    file_name = request.json.get("file_name")
-    file_class = request.json.get("file_class")
-    user_id = request.json.get("user_id") or str(uuid.uuid4())
-    project_name = request.json.get("project_name")
-    iteration = request.json.get("iteration")
-    aspect_ratio = request.json.get("aspect_ratio")
-    stream = request.json.get("stream", False)
-
-    video_storage_file_name = f"video-{user_id}-{project_name}-{iteration}"
-
-    if not code:
-        return jsonify(error="No code provided"), 400
+def render_video_task(args):
+    # Unpack arguments
+    code = args.get('code')
+    file_name = args.get('file_name')
+    file_class = args.get('file_class')
+    user_id = args.get('user_id')
+    project_name = args.get('project_name')
+    iteration = args.get('iteration')
+    aspect_ratio = args.get('aspect_ratio')
+    video_storage_file_name = args.get('video_storage_file_name')
+    stream = args.get('stream', False)
 
     # Determine frame size and width based on aspect ratio
     frame_size, frame_width = get_frame_config(aspect_ratio)
@@ -127,193 +122,111 @@ config.frame_width = {frame_width}
     with open(file_path, "w") as f:
         f.write(modified_code)
 
-    def render_video():
-        process = None
-        video_file_path = None
-        try:
-            command_list = [
-                "manim",
-                file_path,
-                file_class,
-                "--format=mp4",
-                "--media_dir",
-                ".",
-                "--custom_folders",
-            ]
-
-            process = subprocess.Popen(
-                command_list,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                cwd=os.path.dirname(os.path.realpath(__file__)),
-                text=True,
-                bufsize=1,
+    video_url = None
+    error = None
+    try:
+        command_list = [
+            "manim",
+            file_path,
+            file_class,
+            "--format=mp4",
+            "--media_dir",
+            ".",
+            "--custom_folders",
+        ]
+        process = subprocess.Popen(
+            command_list,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=os.path.dirname(os.path.realpath(__file__)),
+            text=True,
+            bufsize=1,
+        )
+        error_output = []
+        while True:
+            output = process.stdout.readline()
+            error_line = process.stderr.readline()
+            if output == "" and error_line == "" and process.poll() is not None:
+                break
+            if error_line:
+                error_output.append(error_line.strip())
+        if process.returncode == 0:
+            video_file_path = os.path.join(
+                os.path.dirname(os.path.realpath(__file__)),
+                f"{file_class or 'GenScene'}.mp4"
             )
-            current_animation = -1
-            current_percentage = 0
-            error_output = []
-            in_error = False
-
-            while True:
-                output = process.stdout.readline()
-                error = process.stderr.readline()
-
-                if output == "" and error == "" and process.poll() is not None:
-                    break
-
-                if output:
-                    print("STDOUT:", output.strip())
-                if error:
-                    print("STDERR:", error.strip())
-                    error_output.append(error.strip())
-
-                # Check for critical errors
-                if "is not in the script" in error:
-                    in_error = True
-                    continue
-                if "Traceback (most recent call last)" in error:
-                    in_error = True
-                    continue
-                if in_error:
-                    if error.strip() == "":
-                        in_error = False
-                        full_error = "\n".join(error_output)
-                        yield f'{{"error": {json.dumps(full_error)}}}\n'
-                        return
-                    continue
-
-                animation_match = re.search(r"Animation (\d+):", error)
-                if animation_match:
-                    new_animation = int(animation_match.group(1))
-                    if new_animation != current_animation:
-                        current_animation = new_animation
-                        current_percentage = 0
-                        yield f'{{"animationIndex": {current_animation}, "percentage": 0}}\n'
-
-                percentage_match = re.search(r"(\d+)%", error)
-                if percentage_match:
-                    new_percentage = int(percentage_match.group(1))
-                    if new_percentage != current_percentage:
-                        current_percentage = new_percentage
-                        yield f'{{"animationIndex": {current_animation}, "percentage": {current_percentage}}}\n'
-
-            if process.returncode == 0:
-                # Try to find the video file
+            if not os.path.exists(video_file_path):
                 video_file_path = os.path.join(
-                    os.path.dirname(os.path.realpath(__file__)),
+                    os.path.dirname(os.path.dirname(os.path.realpath(__file__))),
                     f"{file_class or 'GenScene'}.mp4"
                 )
-                if not os.path.exists(video_file_path):
-                    video_file_path = os.path.join(
-                        os.path.dirname(os.path.dirname(os.path.realpath(__file__))),
-                        f"{file_class or 'GenScene'}.mp4"
-                    )
-
-                if not os.path.exists(video_file_path):
-                    print(f"Video file not found. Files in current directory: {os.listdir(os.path.dirname(video_file_path))}")
-                    raise FileNotFoundError(f"Video file not found at {video_file_path}")
-
-                print(f"Files in video file directory: {os.listdir(os.path.dirname(video_file_path))}")
-
+            if not os.path.exists(video_file_path):
+                error = f"Video file not found at {video_file_path}"
+            else:
                 if USE_LOCAL_STORAGE == "true":
-                    base_url = (
-                        request.host_url
-                        if request and hasattr(request, "host_url")
-                        else None
-                    )
                     video_url = move_to_public_folder(
-                        video_file_path, video_storage_file_name, base_url
+                        video_file_path, video_storage_file_name, BASE_URL
                     )
                 else:
                     video_url = upload_to_digital_ocean_storage(
                         video_file_path, video_storage_file_name
                     )
-                print(f"Video URL: {video_url}")
-
-                if stream:
-                    yield f'{{ "video_url": "{video_url}" }}\n'
-                    sys.stdout.flush()
-                else:
-                    yield {
-                        "message": "Video generation completed",
-                        "video_url": video_url,
-                    }
-            else:
-                full_error = "\n".join(error_output)
-                yield f'{{"error": {json.dumps(full_error)}}}\n'
-
-        except Exception as e:
-            print(f"Unexpected error: {str(e)}")
-            traceback.print_exc()
-            print(f"Files in current directory after error: {os.listdir('.')}" )
-            yield f'{{"error": "Unexpected error occurred: {str(e)}"}}\n'
-        finally:
-            # Remove the temporary Python file
-            try:
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-                    print(f"Removed temporary file: {file_path}")
-                if video_file_path and os.path.exists(video_file_path):
-                    os.remove(video_file_path)
-                    print(f"Removed temporary video file: {video_file_path}")
-            except Exception as e:
-                print(f"Error removing temporary file {file_path}: {e}")
-
-    if stream:
-        return Response(
-            render_video(), content_type="text/event-stream", status=207
-        )
-    else:
-        video_url = None
+        else:
+            error = "\n".join(error_output)
+    except Exception as e:
+        error = str(e)
+    finally:
         try:
-            for result in render_video():
-                print(f"Generated result: {result}")
-                if isinstance(result, dict):
-                    if "video_url" in result:
-                        video_url = result["video_url"]
-                    elif "error" in result:
-                        raise Exception(result["error"])
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            if video_url and os.path.exists(video_url):
+                os.remove(video_url)
+        except Exception:
+            pass
+    return {"video_url": video_url, "error": error}
 
-            if video_url:
-                return (
-                    jsonify(
-                        {
-                            "message": "Video generation completed",
-                            "video_url": video_url,
-                        }
-                    ),
-                    200,
-                )
-            else:
-                return (
-                    jsonify(
-                        {
-                            "message": "Video generation completed, but no URL was found"
-                        }
-                    ),
-                    200,
-                )
-        except StopIteration:
-            if video_url:
-                return (
-                    jsonify(
-                        {
-                            "message": "Video generation completed",
-                            "video_url": video_url,
-                        }
-                    ),
-                    200,
-                )
-            else:
-                return (
-                    jsonify(
-                        {
-                            "message": "Video generation completed, but no URL was found"
-                        }
-                    ),
-                    200,
-                )
-        except Exception as e:
-            print(f"Error in non-streaming mode: {e}")
-            return jsonify({"error": str(e)}), 500
+
+@video_rendering_bp.route("/v1/render/video", methods=["POST"])
+def render_video_route():
+    """
+    Endpoint to render a video using Manim based on user-provided code and parameters.
+    """
+    code = request.json.get("code")
+    file_name = request.json.get("file_name")
+    file_class = request.json.get("file_class")
+    user_id = request.json.get("user_id") or str(uuid.uuid4())
+    project_name = request.json.get("project_name")
+    iteration = request.json.get("iteration")
+    aspect_ratio = request.json.get("aspect_ratio")
+    stream = request.json.get("stream", False)
+    video_storage_file_name = f"video-{user_id}-{project_name}-{iteration}"
+    if not code:
+        return jsonify(error="No code provided"), 400
+    args = {
+        'code': code,
+        'file_name': file_name,
+        'file_class': file_class,
+        'user_id': user_id,
+        'project_name': project_name,
+        'iteration': iteration,
+        'aspect_ratio': aspect_ratio,
+        'video_storage_file_name': video_storage_file_name,
+        'stream': stream
+    }
+    job = queue.enqueue(render_video_task, args)
+    return jsonify({"job_id": job.get_id()}), 202
+
+
+@video_rendering_bp.route("/v1/render/video/status/<job_id>", methods=["GET"])
+def get_video_status(job_id):
+    try:
+        job = Job.fetch(job_id, connection=redis_conn)
+    except Exception as e:
+        return jsonify({"status": "not_found", "error": str(e)}), 404
+    if job.is_finished:
+        return jsonify({"status": "finished", "result": job.result})
+    elif job.is_failed:
+        return jsonify({"status": "failed", "error": str(job.exc_info)})
+    else:
+        return jsonify({"status": "in_progress"})
 
