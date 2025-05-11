@@ -12,6 +12,8 @@ import time
 import requests
 import boto3
 from dotenv import load_dotenv
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 load_dotenv()
 
@@ -25,6 +27,9 @@ DO_SPACES_ACCESS_SECRET = os.getenv("DO_SPACES_ACCESS_SECRET")
 DO_SPACES_REGION = os.getenv("DO_SPACES_REGION")
 DO_SPACES_BUCKET = os.getenv("DO_SPACES_BUCKET")
 DO_SPACES_ENDPOINT = os.getenv("DO_SPACES_ENDPOINT")
+
+# Create a thread pool for running rendering tasks
+executor = ThreadPoolExecutor(max_workers=4)
 
 
 def upload_to_digital_ocean_storage(file_path: str, video_storage_file_name: str) -> str:
@@ -259,12 +264,11 @@ config.frame_width = {frame_width}
             except Exception as e:
                 print(f"Error removing temporary file {file_path}: {e}")
 
-    if stream:
-        return Response(
-            render_video(), content_type="text/event-stream", status=207
-        )
-    else:
+    def process_render_results():
+        """Process the rendering results and return a final response"""
         video_url = None
+        error = None
+        
         try:
             for result in render_video():
                 print(f"Generated result: {result}")
@@ -272,48 +276,62 @@ config.frame_width = {frame_width}
                     if "video_url" in result:
                         video_url = result["video_url"]
                     elif "error" in result:
-                        raise Exception(result["error"])
-
+                        error = result["error"]
+                        break
+                elif isinstance(result, str) and "error" in result:
+                    try:
+                        error_json = json.loads(result)
+                        if "error" in error_json:
+                            error = error_json["error"]
+                            break
+                    except:
+                        # If we can't parse as JSON, treat the whole string as error message
+                        error = result
+                        break
+            
+            if error:
+                return {"error": error}, 500
+            
             if video_url:
-                return (
-                    jsonify(
-                        {
-                            "message": "Video generation completed",
-                            "video_url": video_url,
-                        }
-                    ),
-                    200,
-                )
+                return {
+                    "message": "Video generation completed",
+                    "video_url": video_url,
+                }, 200
             else:
-                return (
-                    jsonify(
-                        {
-                            "message": "Video generation completed, but no URL was found"
-                        }
-                    ),
-                    200,
-                )
+                return {
+                    "message": "Video generation completed, but no URL was found"
+                }, 200
+                
         except StopIteration:
             if video_url:
-                return (
-                    jsonify(
-                        {
-                            "message": "Video generation completed",
-                            "video_url": video_url,
-                        }
-                    ),
-                    200,
-                )
+                return {
+                    "message": "Video generation completed",
+                    "video_url": video_url,
+                }, 200
             else:
-                return (
-                    jsonify(
-                        {
-                            "message": "Video generation completed, but no URL was found"
-                        }
-                    ),
-                    200,
-                )
+                return {
+                    "message": "Video generation completed, but no URL was found"
+                }, 200
         except Exception as e:
-            print(f"Error in non-streaming mode: {e}")
-            return jsonify({"error": str(e)}), 500
+            print(f"Error in processing render results: {e}")
+            traceback.print_exc()
+            return {"error": str(e)}, 500
+
+    if stream:
+        return Response(
+            render_video(), content_type="text/event-stream", status=207
+        )
+    else:
+        # Create a long-polling endpoint that waits for the video to be rendered
+        def generate():
+            # This function will yield a single result when the rendering is complete
+            future = executor.submit(process_render_results)
+            response_data, status_code = future.result()
+            yield json.dumps(response_data)
+
+        return Response(
+            generate(),
+            content_type="application/json",
+            status=200
+        )
 

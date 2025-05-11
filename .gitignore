@@ -174,3 +174,5 @@ routes/temp_files/
 routes/partial_movie_files/
 routes/public/
 .vercel/
+
+public/

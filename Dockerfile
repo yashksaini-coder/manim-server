@@ -8,7 +8,23 @@ COPY . /app
 # The installer requires curl (and certificates) to download the release archive
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
 
-# Download the latest installer
+# Install system dependencies for Manim
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    libcairo2-dev \
+    libpango1.0-dev \
+    texlive \
+    texlive-fonts-extra \
+    texlive-latex-recommended \
+    texlive-science \
+    tipa \
+    libffi-dev \
+    git \
+    build-essential \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+    # Download the latest installer
 ADD https://astral.sh/uv/install.sh /uv-installer.sh
 
 # Run the installer then remove it
