@@ -137,8 +137,6 @@ config.frame_width = {frame_width}
         video_file_path = None
         try:
             command_list = [
-                "python",
-                "-m",
                 "manim",
                 file_path,
                 file_class,
