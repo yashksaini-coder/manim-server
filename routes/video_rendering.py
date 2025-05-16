@@ -13,6 +13,8 @@ import uuid
 import boto3
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor
+import asyncio
+import tempfile
 
 load_dotenv()
 
@@ -65,18 +67,20 @@ class RenderRequest(BaseModel):
     stream: Optional[bool] = False
 
 @router.post("/v1/render/video")
-async def render_video_route(request: Request, body: RenderRequest):
+async def render_video_route(body: RenderRequest):
     code = body.code
     file_name = body.file_name
     file_class = body.file_class
     user_id = body.user_id or str(uuid.uuid4())
-    project_name = body.project_name
-    iteration = body.iteration
+    project_name = body.project_name or "project"
+    iteration = body.iteration or "0"
     aspect_ratio = body.aspect_ratio
     stream = body.stream
     video_storage_file_name = f"video-{user_id}-{project_name}-{iteration}"
-    if not code:
-        return JSONResponse(content={"error": "No code provided"}, status_code=400)
+
+    if not code or not file_class:
+        return JSONResponse(content={"error": "No code or file_class provided"}, status_code=400)
+
     frame_size, frame_width = get_frame_config(aspect_ratio)
     modified_code = f"""
 from manim import *
@@ -86,173 +90,56 @@ config.frame_width = {frame_width}
 
 {code}
     """
-    temp_file_name = f"scene_{os.urandom(2).hex()}.py"
-    api_dir = os.path.dirname(os.path.dirname(__file__))
-    public_dir = os.path.join(api_dir, "public")
-    os.makedirs(public_dir, exist_ok=True)
-    file_path = os.path.join(public_dir, temp_file_name)
+    temp_file_name = f"scene_{uuid.uuid4().hex}.py"
+    temp_dir = tempfile.gettempdir()
+    file_path = os.path.join(temp_dir, temp_file_name)
     with open(file_path, "w") as f:
         f.write(modified_code)
-    def render_video():
-        process = None
-        video_file_path = None
-        try:
-            command_list = [
-                "manim",
-                file_path,
-                file_class,
-                "--format=mp4",
-                "--media_dir",
-                ".",
-                "--custom_folders",
-            ]
-            process = subprocess.Popen(
-                command_list,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                cwd=os.path.dirname(os.path.realpath(__file__)),
-                text=True,
-                bufsize=1,
-            )
-            current_animation = -1
-            current_percentage = 0
-            error_output = []
-            in_error = False
-            while True:
-                output = process.stdout.readline()
-                error = process.stderr.readline()
-                if output == "" and error == "" and process.poll() is not None:
-                    break
-                if output:
-                    print("STDOUT:", output.strip())
-                if error:
-                    print("STDERR:", error.strip())
-                    error_output.append(error.strip())
-                if "is not in the script" in error:
-                    in_error = True
-                    continue
-                if "Traceback (most recent call last)" in error:
-                    in_error = True
-                    continue
-                if in_error:
-                    if error.strip() == "":
-                        in_error = False
-                        full_error = "\n".join(error_output)
-                        yield f'{{"error": {json.dumps(full_error)}}}\n'
-                        return
-                    continue
-                animation_match = re.search(r"Animation (\d+):", error)
-                if animation_match:
-                    new_animation = int(animation_match.group(1))
-                    if new_animation != current_animation:
-                        current_animation = new_animation
-                        current_percentage = 0
-                        yield f'{{"animationIndex": {current_animation}, "percentage": 0}}\n'
-                percentage_match = re.search(r"(\d+)%", error)
-                if percentage_match:
-                    new_percentage = int(percentage_match.group(1))
-                    if new_percentage != current_percentage:
-                        current_percentage = new_percentage
-                        yield f'{{"animationIndex": {current_animation}, "percentage": {current_percentage}}}\n'
-            if process.returncode == 0:
-                video_file_path = os.path.join(
-                    os.path.dirname(os.path.realpath(__file__)),
-                    f"{file_class or 'GenScene'}.mp4"
-                )
-                if not os.path.exists(video_file_path):
-                    video_file_path = os.path.join(
-                        os.path.dirname(os.path.dirname(os.path.realpath(__file__))),
-                        f"{file_class or 'GenScene'}.mp4"
-                    )
-                if not os.path.exists(video_file_path):
-                    print(f"Video file not found. Files in current directory: {os.listdir(os.path.dirname(video_file_path))}")
-                    raise FileNotFoundError(f"Video file not found at {video_file_path}")
-                print(f"Files in video file directory: {os.listdir(os.path.dirname(video_file_path))}")
-                video_url = upload_to_digital_ocean_storage(
-                    video_file_path, video_storage_file_name
-                )
-                print(f"Video URL: {video_url}")
-                if stream:
-                    yield f'{{ "video_url": "{video_url}" }}\n'
-                    sys.stdout.flush()
-                else:
-                    yield json.dumps({
-                        "message": "Video generation completed",
-                        "video_url": video_url,
-                    })
-            else:
-                full_error = "\n".join(error_output)
-                yield f'{{"error": {json.dumps(full_error)}}}\n'
-        except Exception as e:
-            print(f"Unexpected error: {str(e)}")
-            traceback.print_exc()
-            print(f"Files in current directory after error: {os.listdir('.')}")
-            yield f'{{"error": "Unexpected error occurred: {str(e)}"}}\n'
-        finally:
-            try:
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-                    print(f"Removed temporary file: {file_path}")
-                if video_file_path and os.path.exists(video_file_path):
-                    os.remove(video_file_path)
-                    print(f"Removed temporary video file: {video_file_path}")
-            except Exception as e:
-                print(f"Error removing temporary file {file_path}: {e}")
-    def process_render_results():
-        video_url = None
-        error = None
-        try:
-            for result in render_video():
-                print(f"Generated result: {result}")
-                # Always try to parse as JSON
-                if isinstance(result, str):
-                    try:
-                        result_json = json.loads(result)
-                        if "video_url" in result_json:
-                            video_url = result_json["video_url"]
-                        if "error" in result_json:
-                            error = result_json["error"]
-                            break
-                    except Exception:
-                        # If not JSON, skip
-                        pass
-            if error:
-                return {"error": error}, 500
-            if video_url:
-                return {
-                    "message": "Video generation completed",
-                    "video_url": video_url,
-                }, 200
-            else:
-                return {
-                    "message": "Video generation completed, but no URL was found"
-                }, 200
-        except StopIteration:
-            if video_url:
-                return {
-                    "message": "Video generation completed",
-                    "video_url": video_url,
-                }, 200
-            else:
-                return {
-                    "message": "Video generation completed, but no URL was found"
-                }, 200
-        except Exception as e:
-            print(f"Error in processing render results: {e}")
-            traceback.print_exc()
-            return {"error": str(e)}, 500
-    if stream:
-        return StreamingResponse(
-            render_video(), media_type="text/event-stream", status_code=207
-        )
-    else:
-        def generate():
-            future = executor.submit(process_render_results)
-            response_data, status_code = future.result()
-            yield json.dumps(response_data)
-        return StreamingResponse(
-            generate(),
-            media_type="application/json",
-            status_code=200
-        )
+
+    # Run manim asynchronously
+    manim_cmd = [
+        "manim",
+        "-ql",
+        file_path,
+        file_class,
+        "--format=mp4",
+        "--media_dir", temp_dir,
+        "--custom_folders"
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *manim_cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await proc.communicate()
+
+    if proc.returncode != 0:
+        error_message = f"Manim failed:\nSTDERR: {stderr.decode()}\nSTDOUT: {stdout.decode()}"
+        print(error_message)
+        os.remove(file_path)
+        return JSONResponse({"error": error_message}, status_code=400)
+
+    # Find the output video file
+    video_file = f"{file_class}.mp4"
+    video_path = os.path.join(temp_dir, "media", "videos", "tmp", "480p15", video_file)
+    if not os.path.exists(video_path):
+        # Try to find the file in temp_dir directly as fallback
+        video_path = os.path.join(temp_dir, video_file)
+        if not os.path.exists(video_path):
+            error_message = f"Video file not found at {video_path}"
+            print(error_message)
+            os.remove(file_path)
+            return JSONResponse({"error": error_message}, status_code=500)
+
+    # Upload to DigitalOcean Spaces
+    video_url = upload_to_digital_ocean_storage(video_path, video_storage_file_name)
+
+    # Clean up temp files
+    os.remove(file_path)
+    os.remove(video_path)
+
+    return JSONResponse(
+        content={"video_url": video_url},
+        status_code=200
+    )
 
