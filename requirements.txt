@@ -5,3 +5,5 @@ groq
 boto3
 dotenv
 manim
+uvicorn
+fastapi[standard]

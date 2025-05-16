@@ -27,4 +27,4 @@ COPY . .
 
 EXPOSE 8080
 
-CMD ["gunicorn", "-c", "gunicorn_config.py", "app:app"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
