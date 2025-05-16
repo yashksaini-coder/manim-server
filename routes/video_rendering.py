@@ -114,10 +114,10 @@ config.frame_width = {frame_width}
     stdout, stderr = await proc.communicate()
 
     if proc.returncode != 0:
-        error_message = f"Manim failed:\nSTDERR: {stderr.decode()}\nSTDOUT: {stdout.decode()}"
-        print(error_message)
-        os.remove(file_path)
-        return JSONResponse({"error": error_message}, status_code=400)
+        print("Manim failed!")
+        print("STDOUT:", stdout.decode())
+        print("STDERR:", stderr.decode())
+        return JSONResponse({"error": stderr.decode(), "stdout": stdout.decode()}, status_code=400)
 
     # Find the output video file
     video_file = f"{file_class}.mp4"
